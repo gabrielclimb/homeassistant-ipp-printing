@@ -20,6 +20,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant, callback, ServiceCall
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.group import expand_entity_ids
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -333,7 +334,7 @@ def async_get_devices_from_targets(
     """
     devices: set[str] = set()
     # Convert all entity IDs to nodes
-    for entity_id in expand_entity_ids(hass, val.get(ATTR_ENTITY_ID, [])):
+    for entity_id in expand_entity_ids(hass, cv.ensure_list(val.get(ATTR_ENTITY_ID))):
         try:
             devices.add(
                 async_get_device_from_entity_id(hass, entity_id, ent_reg, dev_reg)
@@ -342,11 +343,11 @@ def async_get_devices_from_targets(
             logger.warning(err.args[0])
 
     # Convert all area IDs to nodes
-    for area_id in val.get(ATTR_AREA_ID, []):
+    for area_id in cv.ensure_list(val.get(ATTR_AREA_ID)):
         devices.update(async_get_devices_from_area_id(hass, area_id, ent_reg, dev_reg))
 
     # Convert all device IDs to nodes
-    for device_id in val.get(ATTR_DEVICE_ID, []):
+    for device_id in cv.ensure_list(val.get(ATTR_DEVICE_ID)):
         try:
             devices.add(device_id)
         except ValueError as err:
@@ -357,6 +358,13 @@ def async_get_devices_from_targets(
 
 def get_device_id(hass: HomeAssistant, call: ServiceCall) -> str:
     device_id = list(async_get_devices_from_targets(hass, call.data))
+    if not device_id:
+        raise ServiceValidationError(
+            "no IPP printer device found in the target; pass a device, area, "
+            "or an entity belonging to the IPP integration"
+        )
     if len(device_id) != 1:
-        raise ServiceValidationError("only a single device is supported at a time")
+        raise ServiceValidationError(
+            "only a single device is supported at a time, got %d" % len(device_id)
+        )
     return device_id[0]
